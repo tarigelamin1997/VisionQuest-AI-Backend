@@ -1,0 +1,15 @@
+# --- Core Application ---
+streamlit                   # The Web Interface
+boto3                       # AWS SDK (The bridge to Bedrock/S3)
+botocore                    # Low-level AWS requests (usually auto-installed, but good to be safe)
+
+# --- Configuration & Security ---
+python-dotenv               # Loads environment variables (Best practice for secrets)
+
+# --- Data & Analytics (For Phase 2) ---
+pandas                      # For displaying data tables/Excel sheets nicely
+plotly                      # For creating interactive charts (e.g., "Compliance Score")
+numpy                       # Mathematical operations (often needed by Pandas)
+
+# --- Development Tools ---
+watchdog                    # Makes Streamlit auto-reload faster/smoother on Windows
