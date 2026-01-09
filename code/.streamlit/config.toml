@@ -1,0 +1,5 @@
+[server]
+enableCORS = false
+
+# [theme]  <-- We removed the hardcoded colors
+# The app will now automatically match your device (Light or Dark mode).
