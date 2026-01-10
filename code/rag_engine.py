@@ -26,9 +26,59 @@ def retrieve_from_kb(query):
         print(f"❌ Retrieval Error: {str(e)}")
         return []
 
-def generate_answer(query, retrieved_docs):
+def generate_answer(query, retrieved_docs, language="English"):
+    """
+    Step 2: Send the Question + Context + Language Instruction to Llama 3.
+    """
     if not retrieved_docs:
         return "Sorry, I couldn't find any documents to answer that."
+
+    # Prepare Context
+    context_text = ""
+    print("\n📄 FOUND CONTEXT:")
+    for doc in retrieved_docs:
+        text = doc['content']['text']
+        uri = doc['location']['s3Location']['uri']
+        print(f" - Found in: {uri}")
+        context_text += f"{text}\n"
+
+    # --- DYNAMIC PROMPT (Adds Language Instruction) ---
+    system_instruction = f"""You are an expert on Saudi ZATCA regulations. 
+    You must answer the user's question strictly based on the context provided below.
+    
+    IMPORTANT: You must answer in {language}.
+    """
+
+    formatted_prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+{system_instruction}
+<|eot_id|><|start_header_id|>user<|end_header_id|>
+Context:
+{context_text}
+
+Question: 
+{query}
+<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+"""
+
+    # --- PAYLOAD ---
+    body = json.dumps({
+        "prompt": formatted_prompt,
+        "max_gen_len": 512,
+        "temperature": 0.5,
+        "top_p": 0.9
+    })
+
+    try:
+        response = bedrock_runtime.invoke_model(
+            modelId=MODEL_ID,
+            body=body
+        )
+        
+        response_body = json.loads(response.get("body").read())
+        return response_body['generation']
+
+    except Exception as e:
+        return f"❌ Generation Error: {str(e)}"
 
     # Prepare Context
     context_text = ""
