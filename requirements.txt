@@ -13,3 +13,4 @@ numpy                       # Mathematical operations (often needed by Pandas)
 
 # --- Development Tools ---
 watchdog                    # Makes Streamlit auto-reload faster/smoother on Windows
+pymupdf

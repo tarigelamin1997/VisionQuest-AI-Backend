@@ -1,6 +1,53 @@
-venv/
-.env
+# ==========================
+# 🐍 Python & Virtual Env
+# ==========================
 __pycache__/
-*.pdf
-*.zip
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# ==========================
+# ☁️ Terraform (Infrastructure)
+# ==========================
+# The big binary files live here
+.terraform/
+
+# State files (contain sensitive infrastructure data)
+*.tfstate
+*.tfstate.backup
+
+# Variable files (contain passwords/keys - CRITICAL)
+*.tfvars
+*.auto.tfvars
+
+# Crash logs and plans
+crash.log
+*.tfplan
+
+# ==========================
+# 🔐 Secrets & Environment
+# ==========================
+.env
+.env.local
+.aws/
+secrets.json
+
+# ==========================
+# 🐳 Docker
+# ==========================
+# If you ever export images locally
+*.tar
+
+# ==========================
+# 💻 IDE & OS Junk
+# ==========================
+.vscode/
+.idea/
 .DS_Store
+Thumbs.db
+*.log
