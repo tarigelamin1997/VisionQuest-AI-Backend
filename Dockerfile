@@ -1,20 +1,14 @@
-# Use an official Python runtime as a parent image
-FROM python:3.11-slim
+# Use the official AWS Lambda Python image
+FROM public.ecr.aws/lambda/python:3.11
 
-# Set the working directory
-WORKDIR /app
+# Copy the WORKER specific requirements
+COPY requirements-worker.txt ${LAMBDA_TASK_ROOT}/requirements.txt
 
-# Install system dependencies (if we add PDF tools later)
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# Install dependencies (This will be super fast now)
+RUN pip install -r requirements.txt
 
-# Copy the requirements and install
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy the code
+COPY etl_worker.py ${LAMBDA_TASK_ROOT}
 
-# Copy the worker script
-COPY etl_worker.py .
-
-# Run the worker (In real life, this would listen for events)
-CMD ["python", "etl_worker.py"]
+# Set the CMD to your handler
+CMD [ "etl_worker.handler" ]

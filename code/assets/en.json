@@ -1,0 +1,15 @@
+{
+    "title": "VisionQuest AI: Compliance Inspector",
+    "subtitle": "Powered by Vision 2030",
+    "sidebar_title": "Control Center",
+    "upload_label": "Upload Document (PDF, IMG, TXT)",
+    "upload_btn": "🚀 Analyze & Translate",
+    "processing": "Uploading to AI Factory...",
+    "success_upload": "✅ Upload Complete! AI is inspecting...",
+    "status_label": "Processing Status:",
+    "result_ready": "✨ Analysis & Translation Ready!",
+    "download_btn": "⬇️ Download Report",
+    "history_btn": "📜 Refresh History",
+    "empty_history": "No recent inspections found.",
+    "error_fail": "❌ Inspection Failed"
+}

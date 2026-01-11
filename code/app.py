@@ -1,100 +1,102 @@
 import streamlit as st
-import rag_engine
-import inspector  # <--- importing your new module
+import boto3
+import time
+import json
+import os
+import pandas as pd
+from dotenv import load_dotenv
+
+# --- CONFIGURATION ---
+load_dotenv()
+BUCKET_NAME = "visionquest-kb-tarig-001"
+TABLE_NAME = "VisionQuest_Ingestion_Logs"
+REGION = "us-east-1"
+
+# --- CLIENTS ---
+s3 = boto3.client('s3', region_name=REGION)
+dynamodb = boto3.resource('dynamodb', region_name=REGION)
+table = dynamodb.Table(TABLE_NAME)
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="VisionQuest AI", page_icon="🚀", layout="wide")
+st.set_page_config(page_title="VisionQuest AI", page_icon="🤖", layout="wide")
 
-# --- TRANSLATIONS ---
-translations = {
-    "English": {
-        "title": "VisionQuest / Vision",
-        "subtitle": "AI-Driven Regulatory Intelligence for Saudi SMEs",
-        "tab_chat": "💬 Chat Assistant",
-        "tab_inspector": "🕵️‍♂️ Invoice Inspector",
-        "upload_label": "Upload Invoice (PDF or Image)",
-        "inspect_btn": "🔍 Inspect Compliance",
-        "welcome": "Ask me anything about ZATCA regulations.",
-        "input_placeholder": "Ex: What are the requirements for Phase 2?"
-    },
-    "Arabic": {
-        "title": "VisionQuest / رؤية",
-        "subtitle": "الذكاء الاصطناعي لخدمة الشركات الصغيرة والمتوسطة",
-        "tab_chat": "💬 المساعد الذكي",
-        "tab_inspector": "🕵️‍♂️ فاحص الفواتير",
-        "upload_label": "ارفع الفاتورة (PDF أو صورة)",
-        "inspect_btn": "🔍 فحص الامتثال",
-        "welcome": "اسألني أي شيء عن لوائح الزكاة.",
-        "input_placeholder": "مثال: ما هي عقوبة عدم وجود رمز QR؟"
-    }
-}
+# --- DEBUGGING: LOGO PATH ---
+# If you don't see the logo, look at the path printed at the top of the sidebar
+current_dir = os.getcwd()
 
-# --- SIDEBAR ---
+# --- ASSETS LOADER ---
+def load_text(lang_code):
+    try:
+        with open(f"assets/{lang_code}.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return {} # Fallback
+
+# --- SESSION STATE (Memory) ---
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {"role": "assistant", "content": "Hello! I am your Vision 2030 Consultant. How can I help you with your compliance today?"}
+    ]
+
+# --- SIDEBAR (Settings & Upsell) ---
 with st.sidebar:
-    language = st.radio("Language / اللغة", ["English", "Arabic"])
-    t = translations[language]
-    st.divider()
-    st.success("✅ System Online")
-    st.info(f"🧠 Brain: Llama 3 8B\n👀 Eyes: Llama 3.2 11B")
+    # 1. LOGO DEBUGGER
+    if os.path.exists("logo.svg"):
+        st.image("logo.svg", width=180)
+    else:
+        st.error(f"⚠️ Logo not found in: {current_dir}")
 
-# --- HEADER ---
-col1, col2 = st.columns([1, 5])
-with col1:
-    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/Flag_of_Saudi_Arabia.svg/2560px-Flag_of_Saudi_Arabia.svg.png", width=80) 
-with col2:
-    st.title(t["title"])
-    st.caption(t["subtitle"])
-st.divider()
-
-# --- TABS ---
-tab1, tab2 = st.tabs([t["tab_chat"], t["tab_inspector"]])
-
-# === TAB 1: CHATBOT (RAG Engine) ===
-with tab1:
-    if "messages" not in st.session_state:
-        st.session_state.messages = [{"role": "assistant", "content": t["welcome"]}]
-
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    if prompt := st.chat_input(t["input_placeholder"]):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                docs = rag_engine.retrieve_from_kb(prompt)
-                response = rag_engine.generate_answer(prompt, docs, language)
-                
-                # Right-to-Left logic for Arabic
-                if language == "Arabic":
-                    st.markdown(f"<div dir='rtl' style='text-align: right;'>{response}</div>", unsafe_allow_html=True)
-                else:
-                    st.markdown(response)
-        st.session_state.messages.append({"role": "assistant", "content": response})
-
-# === TAB 2: INSPECTOR (Inspector Engine) ===
-with tab2:
-    uploaded_file = st.file_uploader(t["upload_label"], type=["jpg", "png", "jpeg", "pdf"])
+    # 2. LANGUAGE
+    lang_choice = st.radio("Language / اللغة", ["English", "العربية"], horizontal=True)
+    lang_code = "ar" if lang_choice == "العربية" else "en"
+    txt = load_text(lang_code)
     
-    if uploaded_file:
-        # Step A: Process File (PDF -> Image)
-        image_bytes = inspector.process_file(uploaded_file)
+    st.markdown("---")
+    
+    # 3. THE UPSELL (The "Extra Candy") 🍬
+    with st.expander("💎 **Compliance Inspector (Pro)**", expanded=False):
+        st.info("Upload documents for AI Analysis & Translation.")
+        uploaded_file = st.file_uploader("Upload File", type=['txt', 'pdf', 'png'])
         
-        if image_bytes:
-            st.image(image_bytes, caption="Document Preview", width=600)
-            
-            # Step B: Analyze
-            if st.button(t["inspect_btn"], type="primary"):
-                with st.spinner("🕵️‍♂️ Scanning for violations..."):
-                    report = inspector.analyze_invoice(image_bytes, language)
-                    
-                    st.subheader("📋 Compliance Report")
-                    if language == "Arabic":
-                        st.markdown(f"<div dir='rtl' style='text-align: right;'>{report}</div>", unsafe_allow_html=True)
-                    else:
-                        st.markdown(report)
-        else:
-            st.error("Error processing file. Please upload a valid PDF or Image.")
+        if uploaded_file and st.button("🚀 Analyze Now"):
+            # Reuse your working S3/DynamoDB logic here
+            try:
+                with st.spinner("Sending to AI Factory..."):
+                    uploaded_file.seek(0)
+                    s3.put_object(Bucket=BUCKET_NAME, Key=f"raw/{uploaded_file.name}", Body=uploaded_file.read())
+                st.success("Sent! Monitoring status...")
+                
+                # Simple Polling for the Upsell
+                status_box = st.empty()
+                for _ in range(10):
+                    time.sleep(2)
+                    # (Quick check logic would go here - simplified for UI focus)
+                    status_box.info("🔄 AI is processing your file in the background...")
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+# --- MAIN CHAT INTERFACE ---
+# Apply RTL if Arabic
+if lang_code == "ar":
+    st.markdown("""<style>.stChatMessage { direction: rtl; }</style>""", unsafe_allow_html=True)
+
+st.title("🤖 VisionQuest Consultant")
+st.caption("Ask about VAT, Regulations, or Vision 2030 Policies.")
+
+# 1. Display Chat History
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.write(msg["content"])
+
+# 2. Chat Input
+if prompt := st.chat_input("Type your question here..."):
+    # Add User Message
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.write(prompt)
+
+    # Add AI Response (Placeholder for RAG)
+    with st.chat_message("assistant"):
+        response = "I am currently in 'UI Demo Mode'. In the next step, you will connect me to your RAG Knowledge Base to answer this using real data!"
+        st.write(response)
+        st.session_state.messages.append({"role": "assistant", "content": response})
