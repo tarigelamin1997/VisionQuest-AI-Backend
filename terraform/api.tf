@@ -21,20 +21,35 @@ resource "aws_iam_role_policy" "backend_permissions" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      # Allow Logging
+      # 1. Logging
       {
         Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
         Effect   = "Allow"
         Resource = "arn:aws:logs:*:*:*"
       },
-      # Allow Bedrock Access (Added GetInferenceProfile)
+      # 2. Bedrock & Marketplace
       {
         Action   = [
           "bedrock:RetrieveAndGenerate",
           "bedrock:Retrieve",
           "bedrock:InvokeModel",
-          "bedrock:GetInferenceProfile" # <--- Vital for Inference Profiles
+          "bedrock:GetInferenceProfile",
+          "aws-marketplace:ViewSubscriptions",
+          "aws-marketplace:Subscribe",
+          "aws-marketplace:Unsubscribe"
         ]
+        Effect   = "Allow"
+        Resource = "*"
+      },
+      # 3. S3 Access (For saving audio files)
+      {
+        Action   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
+        Effect   = "Allow"
+        Resource = "*" 
+      },
+      # 4. Transcribe Access (The New Power)
+      {
+        Action   = ["transcribe:StartTranscriptionJob", "transcribe:GetTranscriptionJob"]
         Effect   = "Allow"
         Resource = "*"
       }
@@ -54,14 +69,14 @@ resource "aws_lambda_function" "backend_api" {
   timeout       = 60
   memory_size   = 512
   
-  # Detects changes in the zip file to force re-deploy
   source_code_hash = filebase64sha256("backend.zip")
 
   environment {
     variables = {
-      KB_ID     = aws_bedrockagent_knowledge_base.main_kb.id
-      # The Inference Profile ARN for Claude 3.5 Sonnet v2
-      MODEL_ARN = "arn:aws:bedrock:us-east-1:${data.aws_caller_identity.current.account_id}:inference-profile/us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+      KB_ID      = aws_bedrockagent_knowledge_base.main_kb.id
+      MODEL_ARN  = "arn:aws:bedrock:us-east-1:${data.aws_caller_identity.current.account_id}:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"
+      # NEW VARIABLE: Reuse your raw bucket for audio
+      BUCKET_NAME = "visionquest-kb-raw-visionquest-dev-tarig-001" 
     }
   }
 }
