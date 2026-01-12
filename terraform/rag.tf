@@ -95,6 +95,24 @@ resource "aws_iam_role_policy" "bedrock_s3_policy" {
   })
 }
 
+# Allow the Role to use the Titan Embedding Model
+resource "aws_iam_role_policy" "bedrock_model_policy" {
+  name = "Bedrock_Model_Access"
+  role = aws_iam_role.bedrock_kb_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "bedrock:InvokeModel"
+        Resource = "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v1"
+      }
+    ]
+  })
+}
+
+
 # D. Data Access Policy
 resource "aws_opensearchserverless_access_policy" "data_access_policy" {
   name = "acl-${var.project_id}"
