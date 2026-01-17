@@ -18,6 +18,7 @@ data "archive_file" "status_zip" {
 }
 
 # --- 2. INGEST LAMBDA (The Receptionist) ---
+# --- 2. INGEST LAMBDA (The Receptionist) ---
 resource "aws_lambda_function" "ingest_lambda" {
   filename      = "ingest.zip"
   function_name = "VisionQuest_Ingest"
@@ -28,8 +29,9 @@ resource "aws_lambda_function" "ingest_lambda" {
 
   environment {
     variables = {
-      JOBS_TABLE_NAME = aws_dynamodb_table.jobs_table.name
-      BUCKET_NAME     = aws_s3_bucket.data_lake.id
+      JOBS_TABLE_NAME  = aws_dynamodb_table.jobs_table.name
+      CHATS_TABLE_NAME = aws_dynamodb_table.chats_table.name  # <--- NEW LINE
+      BUCKET_NAME      = aws_s3_bucket.data_lake.id
     }
   }
 }
@@ -70,16 +72,17 @@ resource "aws_lambda_function" "status_lambda" {
   }
 }
 
-# --- 5. S3 TRIGGER (Connects Bucket to Processor) ---
+# --- 5. S3 TRIGGER (The Handshake) ---
 resource "aws_s3_bucket_notification" "trigger_processor" {
   bucket = aws_s3_bucket.data_lake.id
 
   lambda_function {
     lambda_function_arn = aws_lambda_function.processor_lambda.arn
-    events              = ["s3:ObjectCreated:*"]
+    events              = ["s3:ObjectCreated:*"] # Captures Put, Post, and Multi-part
   }
   
-  depends_on = [aws_lambda_permission.allow_s3_processor]
+  # CRITICAL: Ensures S3 is allowed to talk to Lambda BEFORE creating trigger
+  depends_on = [aws_lambda_permission.allow_s3_processor] 
 }
 
 resource "aws_lambda_permission" "allow_s3_processor" {
@@ -87,8 +90,8 @@ resource "aws_lambda_permission" "allow_s3_processor" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.processor_lambda.function_name
   principal     = "s3.amazonaws.com"
-  source_arn    = aws_s3_bucket.data_lake.arn
-} 
+  source_arn    = aws_s3_bucket.data_lake.arn # Restricts access to ONLY your bucket
+}
 
 # --- 6. HISTORY LAMBDA (The Memory) ---
 data "archive_file" "history_zip" {
@@ -113,10 +116,3 @@ resource "aws_lambda_function" "history_lambda" {
   }
 }
 
-# Allow API Gateway to call it
-resource "aws_lambda_permission" "api_gw_history" {
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.history_lambda.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.visionquest_api.execution_arn}/*/*"
-}

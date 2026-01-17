@@ -1,46 +1,54 @@
 import json
 import boto3
 import os
-from decimal import Decimal
 
+# --- CONFIGURATION ---
 dynamodb = boto3.resource('dynamodb')
-JOBS_TABLE = dynamodb.Table(os.environ['JOBS_TABLE_NAME'])
-
-# Helper to fix JSON serialization of Decimal (DynamoDB quirk)
-class DecimalEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj)
-        return super(DecimalEncoder, self).default(obj)
+# Matches the variable passed in compute.tf [cite: 15]
+JOBS_TABLE_NAME = os.environ.get('JOBS_TABLE_NAME')
+jobs_table = dynamodb.Table(JOBS_TABLE_NAME)
 
 def lambda_handler(event, context):
+    print("📡 Status Check: Received Request")
+    
     try:
-        # Parse Job ID from query string (GET /status?job_id=123)
-        # Note: API Gateway HTTP API puts query params in 'queryStringParameters'
-        params = event.get('queryStringParameters', {})
-        job_id = params.get('job_id')
+        # 1. Parse the request body
+        body = json.loads(event.get('body', '{}'))
+        job_id = body.get('job_id')
         
         if not job_id:
-            # Try body if it's a POST
-            body = json.loads(event.get('body', '{}'))
-            job_id = body.get('job_id')
+            print("❌ Error: Missing job_id in request")
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": "Missing job_id"})
+            }
 
-        if not job_id:
-            return {"statusCode": 400, "body": "Missing job_id"}
+        # 2. Fetch the current state from DynamoDB [cite: 15]
+        print(f"🔍 Looking up Job: {job_id}")
+        response = jobs_table.get_item(Key={'job_id': job_id})
+        item = response.get('Item')
 
-        # Fetch from DynamoDB
-        response = JOBS_TABLE.get_item(Key={'job_id': job_id})
-        
-        if 'Item' not in response:
-            return {"statusCode": 404, "body": json.dumps({"status": "NOT_FOUND"})}
-            
-        item = response['Item']
-        
+        if not item:
+            print(f"⚠️ Job {job_id} not found in database")
+            return {
+                "statusCode": 404,
+                "body": json.dumps({"status": "NOT_FOUND"})
+            }
+
+        # 3. Return the full job ticket (status, answer, etc.)
+        print(f"✅ Status Found: {item.get('status')}")
         return {
             "statusCode": 200,
-            "headers": {"Content-Type": "application/json"},
-            "body": json.dumps(item, cls=DecimalEncoder)
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+            },
+            "body": json.dumps(item)
         }
 
     except Exception as e:
-        return {"statusCode": 500, "body": str(e)}
+        print(f"❌ Status Error: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": str(e)})
+        }
