@@ -148,7 +148,7 @@ resource "aws_opensearchserverless_access_policy" "data_access_policy" {
   ])
 }
 
-data "aws_caller_identity" "current" {}
+
 
 # !!! CRITICAL FIX: The Buffer !!!
 # This forces Terraform to just sit and wait for 60s after creating permissions.

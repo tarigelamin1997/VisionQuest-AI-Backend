@@ -1,100 +1,89 @@
 import json
 import boto3
-import uuid
-import base64
 import os
+import uuid
 import time
+import base64
 
-# --- CLIENTS ---
-s3_client = boto3.client('s3')
+s3 = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb')
 
-# --- CONFIGURATION ---
-BUCKET_NAME = os.environ.get('BUCKET_NAME')
+# Env Vars
+BUCKET_NAME = os.environ.get('s3_bucket_name')
 JOBS_TABLE_NAME = os.environ.get('JOBS_TABLE_NAME')
-CHATS_TABLE_NAME = os.environ.get('CHATS_TABLE_NAME')
-
 jobs_table = dynamodb.Table(JOBS_TABLE_NAME)
-chats_table = dynamodb.Table(CHATS_TABLE_NAME)
 
 def lambda_handler(event, context):
-    """
-    RECEIVES: POST /submit (with file/audio/text)
-    OR: GET /test (for health check)
-    """
-    print("📨 Ingest: Request Received")
+    print("📥 Ingest: Received Request")
     
     try:
-        # 1. Handle Empty Body (Browser tests or GET requests)
-        raw_body = event.get('body')
-        if not raw_body:
+        # 1. Parse Input
+        body = json.loads(event.get('body', '{}'))
+        user_id = body.get('user_id', 'anonymous')
+        chat_id = body.get('chat_id', 'default')
+        file_name = body.get('file_name', 'upload.pdf')
+        file_content_b64 = body.get('file_content') # Base64 string
+        user_prompt = body.get('question', 'Analyze this.')
+
+        if not file_content_b64:
             return {
-                "statusCode": 200,
-                "body": json.dumps({"status": "alive", "message": "VisionQuest Ingest is ready for data!"})
+                "statusCode": 400,
+                "body": json.dumps({"error": "No file content"})
             }
 
-        # 2. Parse Incoming JSON
-        body = json.loads(raw_body)
-        user_id = body.get('user_id', 'guest')
-        chat_id = body.get('chat_id', str(uuid.uuid4()))
-        question_text = body.get('question', '')
+        # 2. Generate Ticket (Job ID)
+        job_id = f"job-{int(time.time())}-{str(uuid.uuid4())[:8]}"
+        s3_key = f"{user_id}/{chat_id}/{job_id}/{file_name}"
         
-        job_id = str(uuid.uuid4())
-        timestamp = int(time.time())
-        s3_key = ""
-        job_type = "text"
-        preview = question_text[:50] if question_text else "New Conversation"
+        print(f"🎫 Created Job ID: {job_id}")
 
-        # 3. Route to S3 based on Data Type
-        if 'audio' in body:
-            job_type = "audio"
-            file_data = base64.b64decode(body['audio'])
-            s3_key = f"{user_id}/{chat_id}/{job_id}/input.webm"
-            s3_client.put_object(Bucket=BUCKET_NAME, Key=s3_key, Body=file_data)
-            preview = "🎤 Audio Message"
-
-        elif 'file_data' in body:
-            job_type = "document"
-            file_data = base64.b64decode(body['file_data'])
-            file_name = body.get('file_name', 'upload.pdf')
-            ext = file_name.split('.')[-1]
-            s3_key = f"{user_id}/{chat_id}/{job_id}/input.{ext}"
-            s3_client.put_object(Bucket=BUCKET_NAME, Key=s3_key, Body=file_data)
-            preview = f"📄 {file_name}"
-            
-        else:
-            # Standard Text Chat
-            job_type = "text"
-            payload = json.dumps({"question": question_text})
-            s3_key = f"{user_id}/{chat_id}/{job_id}/input.json"
-            s3_client.put_object(Bucket=BUCKET_NAME, Key=s3_key, Body=payload)
-
-        # 4. Save Chat Metadata (For Sidebar History)
-        chats_table.update_item(
-            Key={'user_id': user_id, 'chat_id': chat_id},
-            UpdateExpression="SET title = if_not_exists(title, :t), last_active = :l",
-            ExpressionAttributeValues={':t': preview, ':l': timestamp}
-        )
-
-        # 5. Create Job Ticket (Triggers Processor via S3 Event)
+        # 3. Write "PROCESSING" to DynamoDB (CRITICAL STEP)
         jobs_table.put_item(Item={
             'job_id': job_id,
             'user_id': user_id,
             'chat_id': chat_id,
-            'status': 'PENDING',
-            'type': job_type,
-            'created_at': timestamp,
-            'expiration_time': timestamp + 86400 # 24hr TTL
+            'status': 'PROCESSING',
+            'created_at': int(time.time()),
+            'file_name': file_name
         })
+        print("✅ DB Entry Created")
+
+        # 4. Upload to S3 (This triggers the Kickoff Lambda)
+        # We upload a JSON wrapper to preserve the Prompt
+        wrapper = {
+            "question": user_prompt,
+            "original_file_name": file_name,
+            # We don't necessarily need the base64 here if we upload the raw file, 
+            # BUT for the 'Kickoff' logic we wrote earlier, let's stick to the raw file 
+            # OR the wrapper. 
+            # FIX: We will upload the RAW PDF to S3 so Textract works natively.
+            # We will store the Prompt in DynamoDB (already done in step 3? No, let's add it).
+        }
+        
+        # Update DB with prompt
+        jobs_table.update_item(
+            Key={'job_id': job_id},
+            UpdateExpression="SET user_prompt = :p",
+            ExpressionAttributeValues={':p': user_prompt}
+        )
+
+        # Decode and Upload Raw PDF (Better for Textract)
+        file_bytes = base64.b64decode(file_content_b64)
+        s3.put_object(
+            Bucket=BUCKET_NAME,
+            Key=s3_key,
+            Body=file_bytes,
+            ContentType='application/pdf'
+        )
+        print(f"🚀 Uploaded to S3: {s3_key}")
 
         return {
             "statusCode": 200,
-            "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
-            "body": json.dumps({"job_id": job_id, "chat_id": chat_id})
+            "body": json.dumps({"job_id": job_id, "message": "Upload successful"})
         }
 
     except Exception as e:
-        print(f"❌ Ingest Error: {str(e)}")
+        print(f"❌ Ingest Failed: {str(e)}")
         return {
             "statusCode": 500,
             "body": json.dumps({"error": str(e)})
